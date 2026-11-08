@@ -1,0 +1,18 @@
+[
+  {
+    "File": "FamilyMonitor.Agent.dll",
+    "Hash": "1BC31E118D042FC00E9C4B5EA221F091A27BBF7607DF555180C43F7208CDFDC9"
+  },
+  {
+    "File": "FamilyMonitor.Core.dll",
+    "Hash": "C48B3E11051970E853F29FBE01BDF4CE0A5B424B12A2715DF92BC2565D75DC41"
+  },
+  {
+    "File": "FamilyMonitor.Infrastructure.dll",
+    "Hash": "45584182FBBB0D537964EA607931C767930B3500E5F0F3A9C5CFE9145F6132C1"
+  },
+  {
+    "File": "FamilyMonitor.PerformanceHarness.dll",
+    "Hash": "EDFA12A03DC87101E53A21914049D5F232B36736D3256A32EFE2084A69B7EEA6"
+  }
+]

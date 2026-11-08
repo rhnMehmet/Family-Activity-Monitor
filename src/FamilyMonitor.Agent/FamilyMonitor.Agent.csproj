@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.2.1</Version>
+    <FileVersion>1.2.1.0</FileVersion>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="FamilyMonitor.UiTests" />
+    <ProjectReference Include="../FamilyMonitor.Core/FamilyMonitor.Core.csproj" />
+    <ProjectReference Include="../FamilyMonitor.Infrastructure/FamilyMonitor.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

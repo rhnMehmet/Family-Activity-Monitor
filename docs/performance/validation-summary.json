@@ -1,0 +1,42 @@
+{
+  "PreviousTests": 115,
+  "AddedTests": 58,
+  "Tests": [
+    {
+      "File": "task-1.2.1-confirmed-debug_net10.0_20261108142735.trx",
+      "Total": 151,
+      "Passed": 151,
+      "Failed": 0
+    },
+    {
+      "File": "task-1.2.1-confirmed-debug_net10.0_20261108142739.trx",
+      "Total": 22,
+      "Passed": 22,
+      "Failed": 0
+    },
+    {
+      "File": "task-1.2.1-confirmed-release_net10.0_20261108142746.trx",
+      "Total": 151,
+      "Passed": 151,
+      "Failed": 0
+    },
+    {
+      "File": "task-1.2.1-confirmed-release_net10.0_20261108142750.trx",
+      "Total": 22,
+      "Passed": 22,
+      "Failed": 0
+    }
+  ],
+  "ExeVersion": "1.2.1.0",
+  "ExeSha256": "F03BAAC4C7C8E4491EBA982C1DDBAA9AF8F5897F7C2DC144092A3479C99E51C1",
+  "SelfContainedFiles": [
+    "coreclr.dll",
+    "hostfxr.dll",
+    "e_sqlite3.dll"
+  ],
+  "PreservedOldExeHashes": true,
+  "PersonalDatabaseOpened": false,
+  "ActualGameFpsMeasured": false,
+  "PhysicalControllerTested": false,
+  "ManualSamplerSmokeSamples": 5
+}

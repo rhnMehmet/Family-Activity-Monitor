@@ -1,0 +1,14 @@
+[
+  {
+    "Path": "artifacts/windows/FamilyMonitor.Agent.exe",
+    "Hash": "7D4ED065C4B30C3FA7B4A020340713084F6F2C9D0F52196F16FEAEFF21B2F204"
+  },
+  {
+    "Path": "artifacts/windows-1.1/FamilyMonitor.Agent.exe",
+    "Hash": "7F5FF018B20E5FC3B3BCC05EC06D63E85781A6BC69B7E1E9513C7B81943B184D"
+  },
+  {
+    "Path": "artifacts/windows-1.2/FamilyMonitor.Agent.exe",
+    "Hash": "8E697C003FAB3C258986268E37C2E244577C63E6E61D7B75C3F871B450F5D383"
+  }
+]
