@@ -7,6 +7,8 @@ using FamilyMonitor.Core.Games;
 using FamilyMonitor.Infrastructure;
 using FamilyMonitor.Infrastructure.Games;
 using FamilyMonitor.Core.Performance;
+using FamilyMonitor.Core.Browsers;
+using FamilyMonitor.Infrastructure.Browsers;
 using Microsoft.Data.Sqlite;
 using ApplicationIdentity = FamilyMonitor.Core.ApplicationIdentity;
 
@@ -17,29 +19,34 @@ internal static class Program
     {
         var label = args.ElementAtOrDefault(0) ?? "baseline";
         var output = Path.GetFullPath(args.ElementAtOrDefault(1) ?? "artifacts/performance/baseline.json");
+        var browserPrototype=label.StartsWith("2.0",StringComparison.Ordinal);
         Application.SetHighDpiMode(HighDpiMode.SystemAware);
         Application.EnableVisualStyles();
         var measurements = new List<object>();
-        foreach (var (mode, seconds) in new[] { ("system-only",20), ("stopped-visible",20), ("active-visible",25),
-                     ("scan-visible",25), ("game-visible",25), ("active-hidden",25), ("longrun-hidden",90) })
+        var phases=browserPrototype?new[]{("system-only",20),("stopped-visible",20),("game-visible",25),("browser-visible",30),("browser-hidden",30),("longrun-hidden",90)}:
+            [("system-only",20),("stopped-visible",20),("active-visible",25),("scan-visible",25),("game-visible",25),("active-hidden",25),("longrun-hidden",90)];
+        foreach (var (mode, seconds) in phases)
         {
+            if(args.Length>2&&mode!=args[2])continue;
             Console.WriteLine($"Starting {label}/{mode} ({seconds}s), synthetic data only.");
-            measurements.Add(Measure(mode, seconds));
+            measurements.Add(Measure(mode, seconds,browserPrototype));
             Directory.CreateDirectory(Path.GetDirectoryName(output)!);
             File.WriteAllText(output, JsonSerializer.Serialize(new { Label=label, TimestampUtc=DateTimeOffset.UtcNow,
                 OS=RuntimeInformation.OSDescription, Runtime=RuntimeInformation.FrameworkDescription,
                 LogicalProcessors=Environment.ProcessorCount, CatalogSeed=1000, HistorySeed=5000,
-                Method="Same MainForm/Tracker/SQLite code; synthetic foreground and Steam library; no user database/native input. Process I/O is logical OS I/O, not physical disk bytes. No FPS/GPU measurement.", Measurements=measurements }, new JsonSerializerOptions { WriteIndented=true }));
+                Method=browserPrototype?"Production MainForm/Tracker/buffered SQLite/browser runtime plus isolated named-pipe listener; three synthetic extension connections with in-process sanitized messages. No actual browser/native-host subprocess/native input/user DB. Process logical I/O is NOT physical disk. FPS/GPU/browser-engine/bridge-subprocess resources unmeasured.":
+                    "Same MainForm/Tracker/SQLite code; synthetic foreground and Steam library; no user database/native input. Process I/O is logical OS I/O, not physical disk bytes. No FPS/GPU measurement.", Measurements=measurements }, new JsonSerializerOptions { WriteIndented=true }));
         }
         Console.WriteLine(output);
     }
 
-    private static object Measure(string mode, int seconds)
+    private static object Measure(string mode, int seconds,bool browserPrototype)
     {
         var root = Path.Combine(Path.GetTempPath(), "FamilyMonitor.Performance", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         Form? form = null; ActivityTracker? tracker = null; GameDiscoveryService? discovery = null;
         BufferedActivityStore? productionHost = null;
+        BrowserRuntime? browserRuntime=null;BrowserPipeServer? browserPipe=null;Action<int>? browserTick=null;
         Task? scanTask = null;
         using var process = Process.GetCurrentProcess();
         var scanTimes = new List<double>(); var scans = 0;
@@ -48,10 +55,12 @@ internal static class Program
             if (mode != "system-only")
             {
                 var settingsStore = new LocalSettingsStore(root);
-                var settings = new LocalSettings { ConsentGranted=true, PrivacyVersion=1, GameDiscoveryConsentGranted=true, GameDiscoveryPrivacyVersion=1 };
+                var settings = new LocalSettings { ConsentGranted=true, PrivacyVersion=1, GameDiscoveryConsentGranted=true, GameDiscoveryPrivacyVersion=1,
+                    Browsers=browserPrototype?new(){ConsentVersion=1,DomainTracking=true,ChromeEnabled=true,EdgeEnabled=true,FirefoxEnabled=true}:new() };
                 settingsStore.Save(settings);
                 var database=Path.Combine(root,"activity.db");
-                DatabaseUpgradeService.EnsureReady(database, _ => throw new InvalidOperationException("Only a new synthetic database is allowed."));
+                if(browserPrototype)BrowserDatabaseUpgradeService.EnsureReady(database,_=>throw new InvalidOperationException("Only a new synthetic database is allowed."));
+                else DatabaseUpgradeService.EnsureReady(database, _ => throw new InvalidOperationException("Only a new synthetic database is allowed."));
                 var store = new SqliteActivityStore(database, optimized:true); var catalog=new SqliteGameCatalogRepository(database, optimized:true);
                 var seed=Enumerable.Range(0,1000).Select(i=>GameIdentity.Create(i.ToString(), "Synthetic_"+i, GamePlatform.Custom,
                     "Fixture", root, Path.Combine(root,"seed",i.ToString()), [Path.Combine(root,"seed",i.ToString(),"runtime.exe")],GameInstallationState.Installed)).ToArray();
@@ -61,7 +70,7 @@ internal static class Program
                     connection.Open(); using var transaction=connection.BeginTransaction(); using var command=connection.CreateCommand(); command.Transaction=transaction;
                     command.CommandText="INSERT INTO activities VALUES($id,'synthetic','synthetic','Synthetic app','synthetic',$start,$end,$duration,'Completed');";
                     command.Parameters.Add("$id",SqliteType.Text); command.Parameters.Add("$start",SqliteType.Integer);command.Parameters.Add("$end",SqliteType.Integer);command.Parameters.Add("$duration",SqliteType.Integer);
-                    var start=DateTimeOffset.UtcNow.Date.AddHours(1).Ticks;
+                    var start=browserPrototype?TimeZoneInfo.ConvertTimeToUtc(DateTime.Today.AddHours(1)).Ticks:DateTimeOffset.UtcNow.Date.AddHours(1).Ticks;
                     for(var i=0;i<5000;i++){command.Parameters["$id"].Value=Guid.NewGuid().ToString();command.Parameters["$start"].Value=start+i*TimeSpan.TicksPerSecond;
                         command.Parameters["$end"].Value=start+(i+1)*TimeSpan.TicksPerSecond;command.Parameters["$duration"].Value=TimeSpan.TicksPerSecond;command.ExecuteNonQuery();}
                     transaction.Commit();
@@ -74,9 +83,10 @@ internal static class Program
                 }
                 var clock=new SystemClock();
                 var policy=new GameModePolicy(clock);
-                productionHost=new(store,clock,new SqliteGameForegroundStore(database,optimized:true),()=>policy.MayRunMaintenance);
+                productionHost=new(store,clock,new SqliteGameForegroundStore(database,optimized:true),()=>policy.MayRunMaintenance,browserStore:browserPrototype?new(database):null);
                 discovery=new([new SteamLibraryProvider(new CachingGameFileSystem(new GameFileSystem(),clock),()=>[steam])],catalog,clock,TimeSpan.FromHours(1));discovery.SetConsent(true);
-                var source=new SyntheticSource(mode=="game-visible" ? new("Synthetic game","synthetic",1,seed[0].ExecutablePaths[0],GameInstallationId:seed[0].Id,GameName:seed[0].Name) : new("Synthetic app","synthetic",1));
+                var source=new SyntheticSource(mode=="game-visible" ? new("Synthetic game","synthetic",1,seed[0].ExecutablePaths[0],GameInstallationId:seed[0].Id,GameName:seed[0].Name) :
+                    mode.StartsWith("browser-",StringComparison.Ordinal)?new("Chrome","chrome",1):new("Synthetic app","synthetic",1));
                 tracker=new(clock,source,productionHost,"synthetic","synthetic",foregroundStore:productionHost);tracker.GrantConsent();
                 var type=typeof(LocalSettings).Assembly; _=type;
                 var agent=Assembly.Load("FamilyMonitor.Agent"); var main=agent.GetType("FamilyMonitor.Agent.MainForm",true)!;
@@ -84,6 +94,35 @@ internal static class Program
                     [tracker,productionHost,settingsStore,settings,null,false,discovery,catalog],null)!;
                 main.GetProperty("UseAsyncQueries",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(form,true);
                 main.GetMethod("ConfigurePerformance",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(form,[policy,null]);
+                if(browserPrototype)
+                {
+                    browserRuntime=new(tracker,clock,productionHost);
+                    main.GetMethod("ConfigureBrowsers",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(form,[browserRuntime,productionHost]);
+                    browserPipe=new(browserRuntime,root,"FamilyMonitor.Performance."+Guid.NewGuid().ToString("N"),null);
+                    var clients=Enum.GetValues<BrowserKind>().ToDictionary(k=>k,k=>Guid.NewGuid());var sequences=clients.Keys.ToDictionary(k=>k,k=>0L);var tab=1;
+                    foreach(var client in clients)browserRuntime.Correlator.Register(client.Value,client.Key,BrowserIdentity.ExtensionId(client.Key));
+                    var runtime=browserRuntime;
+                    void Respond()
+                    {
+                        foreach(var client in clients)
+                        {
+                            var current=runtime.Correlator.Policy(client.Value);if(!current.Enabled)continue;
+                            runtime.Receive(client.Value,NativeMessageProtocol.Encode(new{version=1,type="snapshot",seq=++sequences[client.Key],epoch=current.Epoch,windowId=(int)source.Application.WindowId,tabId=tab,
+                                focused=true,@private=false,page=new BrowserPage(tab%2==0?"docs.example.test":"example.test")}));
+                        }
+                    }
+                    runtime.Correlator.PolicyChanged+=Respond;
+                    browserTick=tick=>
+                    {
+                        if(mode.StartsWith("browser-",StringComparison.Ordinal)&&tick%5==0){tab++;Respond();}
+                        if(mode.StartsWith("browser-",StringComparison.Ordinal)&&tick%15==0)source.Application=source.Application with{WindowId=source.Application.WindowId==1?2:1};
+                        if(tick%10==0)foreach(var client in clients)runtime.Receive(client.Value,NativeMessageProtocol.Encode(new{version=1,type="heartbeat",seq=++sequences[client.Key]}));
+                    };
+                    if(mode.StartsWith("browser-",StringComparison.Ordinal))
+                    {
+                        var tabs=(TabControl)form.Controls.Find("mainTabs",true).Single();tabs.SelectedTab=tabs.TabPages.Cast<TabPage>().Single(p=>p.Name=="browserActivity");
+                    }
+                }
                 form.ShowInTaskbar=false;form.StartPosition=FormStartPosition.Manual;form.Location=new Point(-12000,-12000);form.Show();
                 if(mode.Contains("hidden",StringComparison.Ordinal))form.Hide();
                 if(mode!="stopped-visible")tracker.Start();
@@ -101,6 +140,7 @@ internal static class Program
             timer.Tick+=(_,_)=>
             {
                 tick++;
+                browserTick?.Invoke(tick);
                 if(tracker is not null)refresh!.Invoke(form,null);
                 if(mode=="scan-visible" && watch.Elapsed.TotalSeconds>=(scans+1)*5 && scans<5 && discovery is not null)
                 {
@@ -131,13 +171,13 @@ internal static class Program
         {
             tracker?.Stop();form?.Close();
             (form?.GetType().GetProperty("PendingDatabaseRead",BindingFlags.Instance|BindingFlags.NonPublic)?.GetValue(form) as Task)?.GetAwaiter().GetResult();
-            form?.Dispose();productionHost?.Dispose();discovery?.Dispose();SqliteConnection.ClearAllPools();
+            form?.Dispose();browserPipe?.Dispose();browserRuntime?.Dispose();productionHost?.Dispose();discovery?.Dispose();SqliteConnection.ClearAllPools();
             var full=Path.GetFullPath(root);var parent=Path.GetFullPath(Path.Combine(Path.GetTempPath(),"FamilyMonitor.Performance"))+Path.DirectorySeparatorChar;
             if(!full.StartsWith(parent,StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Unsafe cleanup target.");
             Directory.Delete(full,true);
         }
     }
-    private sealed class SyntheticSource(ApplicationIdentity app):IActivitySource { public ActivitySample Read()=>new(app,TimeSpan.Zero); }
+    private sealed class SyntheticSource(ApplicationIdentity app):IActivitySource { public ApplicationIdentity Application{get;set;}=app;public ActivitySample Read()=>new(Application,TimeSpan.Zero); }
     private static class Native
     {
         [StructLayout(LayoutKind.Sequential)] internal struct Io {public ulong ReadOperationCount,WriteOperationCount,OtherOperationCount,ReadTransferCount,WriteTransferCount,OtherTransferCount;}

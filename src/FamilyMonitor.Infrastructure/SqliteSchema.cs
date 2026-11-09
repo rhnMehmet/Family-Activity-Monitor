@@ -10,7 +10,7 @@ internal static class SqliteSchema
         using var versionCommand = connection.CreateCommand();
         versionCommand.CommandText = "PRAGMA user_version;";
         var version = Convert.ToInt32(versionCommand.ExecuteScalar());
-        if (version > 3) throw new InvalidOperationException("Database schema is newer than this application.");
+        if (version > 4) throw new InvalidOperationException("Database schema is newer than this application.");
         using var transaction = connection.BeginTransaction();
         using var command = connection.CreateCommand();
         command.Transaction = transaction;

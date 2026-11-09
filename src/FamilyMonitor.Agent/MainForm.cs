@@ -5,6 +5,9 @@ using Microsoft.Win32;
 using FamilyMonitor.Core.Games;
 using FamilyMonitor.Core.Performance;
 using FamilyMonitor.Infrastructure.Games;
+using FamilyMonitor.Core.Browsers;
+using FamilyMonitor.Core.Security;
+using FamilyMonitor.Infrastructure.Browsers;
 
 namespace FamilyMonitor.Agent;
 
@@ -17,6 +20,14 @@ internal sealed class MainForm : Form
     private readonly IUserDialogs dialogs;
     private readonly bool enableWindowsIntegration;
     private readonly GamePages? games;
+    private BrowserPages? browserPages;
+    private BrowserRuntime? browserRuntime;
+    private AutoStartService? startup;
+    private ParentalPinService? parentPin;
+    private bool autoLaunched,updatingStartup,startupEntryMatches;
+    private readonly CheckBox autoStart=new(){Name="autoStartEnabled",Text="Windows oturumu açıldığında otomatik başlat",AutoSize=true};
+    private readonly CheckBox autoTrack=new(){Name="autoTrackOnLogin",Text="Otomatik açılışta, geçerli genel iznimle izlemeyi de başlat",AutoSize=true};
+    private readonly Label startupStatus=SummaryLabel("startupStatus");
     private bool showingGameNote;
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 1000 };
     private readonly Label stateLabel = SummaryLabel("trackingStatus");
@@ -68,17 +79,17 @@ internal sealed class MainForm : Form
         this.dialogs = dialogs ?? new UserDialogs();
         this.enableWindowsIntegration = enableWindowsIntegration;
         UseAsyncQueries = enableWindowsIntegration;
-        Text = "Family Activity Monitor — 1.2.1";
+        Text = "Family Activity Monitor — 2.0.0-prototype";
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
-        Font = new Font("Segoe UI", 10);
+        Font = new Font("Segoe UI", 11);
         ClientSize = new Size(1020, 760);
         MinimumSize = new Size(900, 680);
         StartPosition = FormStartPosition.CenterScreen;
         Icon = SystemIcons.Application;
         BackColor = Color.FromArgb(245, 247, 250);
 
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, Padding = new Padding(22), AutoScroll = true };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, Padding = new Padding(16), AutoScroll = true };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -86,13 +97,16 @@ internal sealed class MainForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.Controls.Add(new Label { Text = "Family Activity Monitor", Font = new Font("Segoe UI", 21, FontStyle.Bold), AutoSize = true });
-        var summary = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, RowCount = 6 };
-        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        foreach (var label in new[] { stateLabel, userStateLabel, currentLabel, totalLabel, thresholdLabel, idleLabel })
+        root.Controls.Add(new Label { Text = "Family Activity Monitor", Font = new Font("Segoe UI", 18, FontStyle.Bold), AutoSize = true });
+        var summary = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 5 };
+        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        summary.Controls.Add(stateLabel,0,0);summary.Controls.Add(userStateLabel,1,0);
+        summary.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        foreach (var label in new[] { currentLabel, totalLabel, thresholdLabel, idleLabel })
         {
             summary.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             summary.Controls.Add(label);
+            summary.SetColumnSpan(label,2);
         }
         root.Controls.Add(summary);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true };
@@ -125,6 +139,14 @@ internal sealed class MainForm : Form
         root.Controls.Add(tabs);
         root.Controls.Add(messageLabel);
         Controls.Add(root);
+        Load+=(_,_)=>
+        {
+            if(!enableWindowsIntegration)return;
+            var area=Screen.FromControl(this).WorkingArea;
+            MinimumSize=new Size(Math.Min(MinimumSize.Width,area.Width),Math.Min(MinimumSize.Height,area.Height));
+            Size=new Size(Math.Min(Width,area.Width),Math.Min(Height,area.Height));
+            Location=new Point(Math.Clamp(Left,area.Left,area.Right-Width),Math.Clamp(Top,area.Top,area.Bottom-Height));
+        };
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(trayState);
@@ -153,12 +175,43 @@ internal sealed class MainForm : Form
         Resize += (_, _) => { if (WindowState == FormWindowState.Normal && Visible) RefreshView(); };
         Shown += (_, _) =>
         {
-            if (!tracker.HasConsent) RequestConsent();
+            if (!tracker.HasConsent&&!autoLaunched) RequestConsent();
+            if(startupEntryMatches&&AutoStartService.MayTrack(autoLaunched,this.settings,Environment.UserInteractive,System.Diagnostics.Process.GetCurrentProcess().SessionId,sessionNotificationsAvailable))
+                RunControl(()=>tracker.Start());
             RefreshView();
             if (enableWindowsIntegration) timer.Start();
             games?.Start();
+            if(autoLaunched&&this.settings.AutoStartEnabled&&enableWindowsIntegration)
+            {Hide();tray.ShowBalloonTip(4000,"Family Activity Monitor — Otomatik başlatıldı",tracker.IsEnabled?"Geçerli izninizle izleme açık. Tepsi menüsünden durdurabilir veya çıkabilirsiniz.":"İzleme kapalı. Başlatmak için pencereyi açın.",ToolTipIcon.Info);}
         };
         if (enableWindowsIntegration) SystemEvents.PowerModeChanged += OnPowerModeChanged;
+    }
+
+    internal void ConfigureBrowsers(BrowserRuntime runtime,IBrowserActivityStore browserStore)
+    {
+        browserRuntime=runtime;runtime.Configure(settings.Browsers);
+        browserPages=new(runtime,browserStore,store,()=>settings,SaveBrowserSettings,dialogs,this,RefreshView);
+        tabs.TabPages.AddRange([browserPages.ActivityPage,browserPages.SettingsPage]);
+    }
+    internal void ConfigureStartup(AutoStartService service,ParentalPinService pin,bool launchedAtLogin)
+    {
+        startup=service;parentPin=pin;autoLaunched=launchedAtLogin;
+        startupEntryMatches=settings.AutoStartEnabled&&service.IsRegistered;
+        autoStart.Enabled=autoTrack.Enabled=true;RefreshStartup();
+    }
+    private void SaveBrowserSettings(LocalSettings value)
+    {
+        var old=settings.Browsers;var next=value.Browsers;
+        var narrows=old.DomainTracking&&!next.DomainTracking||old.DetailedUrls&&!next.DetailedUrls||old.SearchQueries&&!next.SearchQueries||
+            old.ChromeEnabled&&!next.ChromeEnabled||old.EdgeEnabled&&!next.EdgeEnabled||old.FirefoxEnabled&&!next.FirefoxEnabled;
+        if(narrows)settings=value;
+        try{settingsStore.Save(value);settings=value;}
+        catch{if(narrows)DisableAutomaticLaunchAfterWriteFailure();throw;}
+    }
+    private void DisableAutomaticLaunchAfterWriteFailure()
+    {
+        startupEntryMatches=false;
+        try{startup?.Apply(false,()=>{});}catch(Exception error)when(error is not OutOfMemoryException){ }
     }
 
     internal void ConfigurePerformance(GameModePolicy policy, GameLibraryChangeMonitor? monitor = null)
@@ -186,8 +239,13 @@ internal sealed class MainForm : Form
         {
             if (!tracker.HasConsent) { RequestConsent(); return; }
             tracker.RevokeConsent(); // Stop in memory even if settings cannot be written.
-            settings = settings with { ConsentGranted = false, GameDiscoveryConsentGranted = false };
-            RunControl(() => { games?.RevokeConsent(); settingsStore.Save(settings); });
+            settings = settings with { ConsentGranted = false, GameDiscoveryConsentGranted = false,AutoTrackOnLogin=false,
+                Browsers=settings.Browsers with{DomainTracking=false,DetailedUrls=false,SearchQueries=false} };
+            RunControl(() =>
+            {
+                try{games?.RevokeConsent();browserPages?.Revoke();settingsStore.Save(settings);}
+                catch{DisableAutomaticLaunchAfterWriteFailure();throw;}
+            });
         };
         var historyActions = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true };
         var clear = MakeButton("Kullanım geçmişini sil");
@@ -217,6 +275,17 @@ internal sealed class MainForm : Form
         });
         layout.Controls.Add(automaticGameMode);
         layout.Controls.Add(gameModeLabel);
+        autoStart.Checked=settings.AutoStartEnabled;autoTrack.Checked=settings.AutoTrackOnLogin;
+        autoStart.Enabled=autoTrack.Enabled=false;
+        layout.Controls.Add(autoStart);layout.Controls.Add(autoTrack);layout.Controls.Add(startupStatus);
+        autoStart.CheckedChanged+=(_,_)=>ChangeStartup();
+        autoTrack.CheckedChanged+=(_,_)=>ChangeStartup();
+        var parents=new FlowLayoutPanel{AutoSize=true,Dock=DockStyle.Top};
+        var parentButton=MakeButton("Ebeveyn ayarları / PIN");parentButton.Name="parentSettings";
+        var recover=MakeButton("PIN'i unuttum");recover.Name="recoverParentPin";
+        parentButton.Click+=(_,_)=>{if(parentPin is not null)ParentPinUi.Show(this,parentPin);};
+        recover.Click+=(_,_)=>{if(parentPin is not null)ParentPinUi.Recover(this,parentPin);};
+        parents.Controls.AddRange([parentButton,recover]);layout.Controls.Add(parents);
         idleSeconds.ValueChanged += (_, _) => RefreshThresholdSetting();
         save.Click += (_, _) => RunControl(() =>
         {
@@ -230,9 +299,32 @@ internal sealed class MainForm : Form
                    "Girdisiz süre sonraki girişte doğrulanır; eşik aşılırsa aktif kullanıma eklenmez." });
         layout.Controls.Add(new TextBox { Multiline = true, ReadOnly = true, Dock = DockStyle.Top, Height = 165, ScrollBars = ScrollBars.Vertical,
             BackColor = SystemColors.Window, Text = ConsentDialog.PrivacyText.ReplaceLineEndings() });
-        layout.Controls.Add(new Label { Text = "Veri konumu: %LOCALAPPDATA%\\FamilyActivityMonitor  •  Otomatik başlatma yok", AutoSize = true });
+        layout.Controls.Add(new Label { Text = "Veri konumu: %LOCALAPPDATA%\\FamilyActivityMonitor  •  Otomatik başlatma varsayılan kapalıdır.", AutoSize = true });
         page.Controls.Add(layout);
         return page;
+    }
+
+    private void ChangeStartup()
+    {
+        if(updatingStartup||startup is null)return;
+        var enables=autoStart.Checked&&!settings.AutoStartEnabled||autoTrack.Checked&&!settings.AutoTrackOnLogin;
+        if(enables&&parentPin is not null&&!dialogs.AuthorizeParentSettings(this,parentPin)){RefreshStartup();return;}
+        if(autoTrack.Checked&&!tracker.HasConsent){messageLabel.Text="Otomatik izleme için önce geçerli genel izninizi verin.";RefreshStartup();return;}
+        RunControl(()=>
+        {
+            var updated=settings with{AutoStartEnabled=autoStart.Checked,AutoTrackOnLogin=autoStart.Checked&&autoTrack.Checked};
+            startup.Apply(updated.AutoStartEnabled,()=>{settingsStore.Save(updated);settings=updated;});
+            startupEntryMatches=updated.AutoStartEnabled;
+        },"Otomatik başlatma tercihi kaydedildi. Windows Başlangıç Uygulamaları'ndan da kapatabilirsiniz.");
+        RefreshStartup();
+    }
+    private void RefreshStartup()
+    {
+        updatingStartup=true;
+        try{autoStart.Checked=settings.AutoStartEnabled;autoTrack.Checked=settings.AutoTrackOnLogin;}
+        finally{updatingStartup=false;}
+        startupStatus.Text=(autoLaunched?"Bu oturum: otomatik başlatma parametresiyle açıldı. ":"")+
+            $"Windows başlangıcı: {(settings.AutoStartEnabled?(startupEntryMatches?"Açık":"Bu yayın için kayıt doğrulanmadı"):"Kapalı")} • Otomatik izleme: {(settings.AutoTrackOnLogin?"Geçerli genel izinle açık":"Kapalı")}";
     }
 
     private void RequestConsent()
@@ -277,6 +369,7 @@ internal sealed class MainForm : Form
     private void RefreshCore(bool force)
     {
         if (IsDisposed) return;
+        browserRuntime?.Maintenance();browserPages?.UpdateRuntime();RefreshStartup();
         gameMode.Enabled = settings.AutomaticGameMode;
         gameMode.Observe(tracker.IsEnabled, tracker.IsPaused, tracker.IsSessionLocked, tracker.IsSuspended, tracker.HasForegroundGame);
         games?.UpdateRuntime(gameMode.IsActive);
@@ -318,7 +411,7 @@ internal sealed class MainForm : Form
         ReadDisplay();
     }
 
-    private sealed record DisplaySnapshot(IReadOnlyList<ApplicationUsage> Usage, IReadOnlyList<ActivityRecord>? History, GamePages.DisplaySnapshot? Games);
+    private sealed record DisplaySnapshot(IReadOnlyList<ApplicationUsage> Usage, IReadOnlyList<ActivityRecord>? History, GamePages.DisplaySnapshot? Games,BrowserPages.Snapshot? Browser);
 
     private async void ReadDisplay()
     {
@@ -331,6 +424,8 @@ internal sealed class MainForm : Form
         var showLibrary = all || tabs.SelectedTab == games?.LibraryPage;
         var showStatistics = all || tabs.SelectedTab == games?.StatisticsPage;
         var week = games?.PeriodIsWeek == true;
+        var showBrowser=all||tabs.SelectedTab==browserPages?.ActivityPage;
+        var browserFilter=browserPages?.SelectedBrowser;
         DisplaySnapshot Load()
         {
             var usage = store.GetDailyUsage(day, TimeZoneInfo.Local);
@@ -346,7 +441,7 @@ internal sealed class MainForm : Form
                     _ => store.Read(start, end).TakeLast(500).ToArray()
                 };
             }
-            return new(usage, records, games?.LoadDisplay(day, week, showLibrary, showStatistics));
+            return new(usage, records, games?.LoadDisplay(day, week, showLibrary, showStatistics),browserPages?.LoadDisplay(day,browserFilter,showBrowser,usage));
         }
         try
         {
@@ -375,6 +470,7 @@ internal sealed class MainForm : Form
                     FormatDuration(record.ActiveDuration), record.Status switch { ActivityStatus.Active => "Devam ediyor", ActivityStatus.Completed => "Tamamlandı", _ => "Kesintiye uğradı" });
             }
             if (snapshot.Games is not null) games?.ApplyDisplay(snapshot.Games);
+            if(snapshot.Browser is not null)browserPages?.ApplyDisplay(snapshot.Browser,browserFilter);
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
@@ -448,6 +544,7 @@ internal sealed class MainForm : Form
         tracker.Stop();
         libraryMonitor?.Dispose();
         games?.Dispose();
+        browserPages?.Dispose();
         if (enableWindowsIntegration) SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         tray.Visible = false;
         base.OnFormClosing(e);
@@ -455,7 +552,7 @@ internal sealed class MainForm : Form
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { requestVersion++; timer.Dispose(); tray.Dispose(); libraryMonitor?.Dispose(); games?.Dispose(); }
+        if (disposing) { requestVersion++; timer.Dispose(); tray.Dispose(); libraryMonitor?.Dispose(); games?.Dispose();browserPages?.Dispose(); }
         base.Dispose(disposing);
     }
 

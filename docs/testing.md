@@ -1,3 +1,7 @@
+# Görev 2 doğrulaması
+
+Güncel 2.0.0-prototype sonuçları ve test kapsamı [Görev 2 raporunda](task-2-report.md); fiziksel A–J senaryoları [manuel kabul belgesinde](task-2-manual-tests.md). Aşağıdaki bölümler önceki sürümlerin test geçmişidir.
+
 # Testler ve doğrulama
 
 ## Görev 1.2.1 — güncel doğrulama

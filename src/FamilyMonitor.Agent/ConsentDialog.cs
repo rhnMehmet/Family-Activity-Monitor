@@ -7,14 +7,18 @@ internal sealed class ConsentDialog : Form
         kullanım başlangıç/bitiş zamanını ve aktif kullanım süresini yerel bilgisayara kaydeder.
         Rastgele yerel cihaz ve oturum tanımlayıcıları da kayıtlarla birlikte saklanır.
 
-        Pencere başlığı, URL, arama sorgusu, sayfa içeriği, tuş vuruşu, şifre, özel mesaj,
+        Bu genel izin kapsamında pencere başlığı, URL, arama sorgusu, sayfa içeriği, tuş vuruşu, şifre, özel mesaj,
         ekran görüntüsü veya tuşların içeriği toplanmaz. Son girdi zamanı yalnızca
         hareketsizliği hesaplamak için bellekte kullanılır. Hiçbir veri internete gönderilmez.
 
         İzlemeyi istediğiniz an duraklatabilir veya durdurabilirsiniz. Ayarlar bölümünden
         izni geri çekebilir, geçmiş kayıtlarını silebilirsiniz. Veriler otomatik silinmez.
         İzin vermek izlemeyi başlatmaz; ayrıca “İzlemeyi başlat” düğmesine basmanız gerekir.
-        Uygulama her açılışta izleme kapalı başlar. Windows ile otomatik başlatılmaz.
+        Normal açılışta izleme kapalı başlar. Windows ile otomatik başlatma varsayılan kapalıdır;
+        yalnızca ayrı ayardan açıkça seçerseniz geçerli genel izninizle oturum açılışında takip başlayabilir.
+
+        Tarayıcı alan adı, temizlenmiş URL yolu ve arama sorguları ayrı, varsayılan kapalı izinlere tabidir.
+        Tarayıcı Ayarları ve eklenti ekranından bu izinleri ayrı ayrı seçebilirsiniz; bu genel izin onları açmaz.
 
         Oyun keşfi ayrı ve varsayılan kapalı bir izne tabidir. Bu ek izinle yerel oyun
         kurulum metaverileri ve exe eşleştirmeleri saklanabilir; ayrıntılar Yüklü Oyunlar sekmesindedir.

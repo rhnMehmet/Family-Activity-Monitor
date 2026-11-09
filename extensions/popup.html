@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="tr">
+<head><meta charset="utf-8"><link rel="stylesheet" href="popup.css"><title>Family Activity Monitor</title></head>
+<body>
+  <h1>Family Activity Monitor</h1>
+  <p>Bu eklenti yalnızca açık seçiminiz ve Windows Agent izniyle çalışır.</p>
+  <label><input type="checkbox" id="enabled"> Alan adı takibine bu tarayıcıda izin ver</label>
+  <label><input type="checkbox" id="details"> Temizlenmiş URL yolunu da paylaş</label>
+  <label><input type="checkbox" id="searches"> Desteklenen arama sonuçlarındaki sorguları paylaş</label>
+  <p>Varsayılan alan adıdır. URL parametreleri ve fragmentler gönderilmez. Özel gezinme, şifre, form, çerez, sayfa içeriği ve ekran görüntüsü toplanmaz. Agent kapalı/duraklatılmışken veya tarayıcı arka plandayken veri gönderilmez.</p>
+  <button id="save">Seçimlerimi uygula</button>
+  <button id="stop">İzni geri çek</button>
+  <button id="reconnect">Agent'a yeniden bağlan</button>
+  <p id="status" role="status">Durum okunuyor…</p>
+  <p>Windows uygulamasında da tarayıcı iznini açıp izlemeyi başlatın. İzni geri çekmek ve Agent'tan çıkmak PIN gerektirmez.</p>
+  <script src="popup.js"></script>
+</body>
+</html>

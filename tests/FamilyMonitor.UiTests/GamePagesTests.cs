@@ -11,7 +11,7 @@ public sealed class GamePagesTests
     public void GameTabsAreAddedWithoutReplacingExistingTabsAndPermissionIsSeparate() => MainFormTests.OnUiThread(() =>
     {
         using var f = new UiFixture(withGames: true); f.Form.Show(); f.Form.RefreshView();
-        Assert.Equal("Family Activity Monitor — 1.2.1", f.Form.Text);
+        Assert.Equal("Family Activity Monitor — 2.0.0-prototype", f.Form.Text);
         var tabs = f.Control<TabControl>("mainTabs"); Assert.Equal(5, tabs.TabCount);
         Assert.Contains(tabs.TabPages.Cast<TabPage>(), x => x.Text == "Uygulama süreleri");
         tabs.SelectedTab = f.Control<TabPage>("gameLibrary");

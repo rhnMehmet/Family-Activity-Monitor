@@ -1,0 +1,78 @@
+{
+  "Version": "2.0.0-prototype",
+  "Date": "2026-11-09",
+  "BaselineCommit": "fdf16d0e70c3d6e8c3c534c35f441fbe099ae08c",
+  "Builds": [
+    {
+      "Configuration": "Debug",
+      "Warnings": 0,
+      "Errors": 0
+    },
+    {
+      "Configuration": "Release",
+      "Warnings": 0,
+      "Errors": 0
+    }
+  ],
+  "Tests": [
+    {
+      "Configuration": "Debug",
+      "Skipped": 0,
+      "WindowsUiAndPipe": 35,
+      "Failed": 0,
+      "CoreInfrastructure": 205
+    },
+    {
+      "Configuration": "Release",
+      "Skipped": 0,
+      "WindowsUiAndPipe": 35,
+      "Failed": 0,
+      "CoreInfrastructure": 205
+    },
+    {
+      "Configuration": "TypeScript Node fake browser APIs",
+      "Skipped": 0,
+      "Passed": 26,
+      "Failed": 0
+    }
+  ],
+  "DistinctCases": 266,
+  "OriginalCasesPreserved": 173,
+  "NewCases": 93,
+  "TotalSuccessfulExecutions": 506,
+  "NpmAuditKnownVulnerabilities": 0,
+  "Package": {
+    "IdentityPolicy": "Fixed Chromium public key / fixed Gecko ID; exact native allowlists",
+    "HostNegativeInvocationChecksPassed": 4,
+    "Installer": "AST and WhatIf only; no HKCU writes",
+    "AgentSha256": "BA8EEF0E5A52635000B4756A7099032A4A3AAFF05D60D4D4BCE08DF1955CADB1",
+    "Files": 310,
+    "Directory": "artifacts/windows-2.0.0-prototype",
+    "FileVersion": "2.0.0.0",
+    "SelfContained": true,
+    "Architecture": "win-x64"
+  },
+  "Previous121Release": {
+    "FilesComparedBeforeAfterRepeatPublish": 280,
+    "Unchanged": true
+  },
+  "PersonalDatabaseOpened": false,
+  "ActualAgentProgramLaunched": false,
+  "ActualBrowserInstalledOrTested": false,
+  "ActualRegistryStartupEnabled": false,
+  "ManualAcceptance": "Pending A-J, real DPI, actual browsers/game/reboot/full resource totals",
+  "GitPrivacy": {
+    "ForbiddenCandidateFiles": 0,
+    "Limit": "Pattern scan is not a guarantee for arbitrary secrets; source public key and synthetic test inputs are intentional.",
+    "HighConfidenceSecretPatternMatches": 0
+  },
+  "Evidence": [
+    "task2-ui-delivery-Debug_net10.0_20261109193823.trx",
+    "task2-ui-delivery-Debug_net10.0_20261109193831.trx",
+    "task2-ui-delivery-Release_net10.0_20261109193840.trx",
+    "task2-ui-delivery-Release_net10.0_20261109193849.trx"
+  ],
+  "SyntheticPerformanceData": "docs/performance-2.0/measurements.json",
+  "GitDeliveryPolicy": "User authorized branch-only commit/push on 2026-11-09; main unchanged; no force push",
+  "PerformanceLimitation": "Measurements precede 2026-11-09 UI polish; full browser/native-host totals and real acceptance remain unverified."
+}

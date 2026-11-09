@@ -7,6 +7,10 @@ namespace FamilyMonitor.Core;
 /// </summary>
 public sealed class ActivityTracker
 {
+    public event Action<Browsers.ObservedActivity>? SampleObserved;
+    public event Action<Browsers.ConfirmedActivity>? IntervalConfirmed;
+    public event Action<DateTimeOffset>? BoundaryChanged;
+    public DateTimeOffset ToUtc(TimeSpan elapsed) => anchorUtc + (elapsed > anchorElapsed ? elapsed-anchorElapsed : TimeSpan.Zero);
     private readonly IClock clock;
     private readonly IActivitySource source;
     private readonly IActivityStore store;
@@ -61,6 +65,7 @@ public sealed class ActivityTracker
 
     public void RevokeConsent()
     {
+        NotifyBoundary();
         // Close already-observed presence before withdrawing; no new source read is performed.
         try { foreground?.Close(Now(), options.MaximumSampleGap); }
         catch (Exception error) when (error is not OutOfMemoryException) { LastError=error.GetType().Name; }
@@ -117,6 +122,7 @@ public sealed class ActivityTracker
 
     public void ClearHistory()
     {
+        NotifyBoundary();
         foreground?.Discard();
         HasForegroundGame = false;
         enabled = paused = false;
@@ -145,6 +151,7 @@ public sealed class ActivityTracker
             }
             lastSampleUtc = now;
             var sample = source.Read();
+            SampleObserved?.Invoke(new(sample,now,anchorElapsed+(now-anchorUtc)));
             foreground?.Observe(sample, now, options.MaximumSampleGap);
             HasForegroundGame = !sample.IsSessionLocked && sample.Application?.GameInstallationId is not null;
             ControllerStatus = sample.ControllerStatus;
@@ -188,7 +195,7 @@ public sealed class ActivityTracker
 
             var confirmedEnd = Max(current.EndUtc, Max(current.StartUtc, now - sample.IdleTime));
             current = current with { EndUtc = confirmedEnd, ActiveDuration = confirmedEnd - current.StartUtc };
-            if (current.ActiveDuration > TimeSpan.Zero) store.Save(current);
+            if (current.ActiveDuration > TimeSpan.Zero) Persist(current);
             State = TrackingState.Active;
             LastError = null;
         }
@@ -201,18 +208,20 @@ public sealed class ActivityTracker
             enabled = paused = false;
             State = TrackingState.Faulted;
             LastError = error.GetType().Name; // Do not expose paths, titles or other user data in diagnostics.
+            NotifyBoundary();
         }
     }
 
     private void Finish()
     {
         if (current is { ActiveDuration: var duration } && duration > TimeSpan.Zero)
-            store.Save(current with { Status = ActivityStatus.Completed });
+            Persist(current with { Status = ActivityStatus.Completed });
         current = null;
     }
 
     private void ChangeBoundary(Action change, TrackingState nextState)
     {
+        NotifyBoundary();
         // Controls take effect even when the final database write fails.
         try { foreground?.Close(Now(), options.MaximumSampleGap); Finish(); }
         catch (Exception error) when (error is not OutOfMemoryException) { LastError = error.GetType().Name; }
@@ -224,6 +233,17 @@ public sealed class ActivityTracker
             boundaryUtc = lastSampleUtc = Now();
             State = nextState;
         }
+    }
+
+    private void Persist(ActivityRecord record)
+    {
+        store.Save(record);
+        IntervalConfirmed?.Invoke(new(record,currentWindow));
+    }
+    private void NotifyBoundary()
+    {
+        try{BoundaryChanged?.Invoke(Now());}
+        catch(Exception error)when(error is not OutOfMemoryException){LastError=error.GetType().Name;}
     }
 
     private DateTimeOffset Now()

@@ -6,13 +6,16 @@ using FamilyMonitor.Core.Games;
 using FamilyMonitor.Infrastructure.Games;
 using FamilyMonitor.Core.Performance;
 using FamilyMonitor.Core.Input;
+using FamilyMonitor.Core.Security;
+using FamilyMonitor.Infrastructure.Security;
+using FamilyMonitor.Infrastructure.Browsers;
 
 namespace FamilyMonitor.Agent;
 
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("tr-TR");
         CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.GetCultureInfo("tr-TR");
@@ -27,12 +30,11 @@ internal static class Program
             var settingsStore = new LocalSettingsStore(directory);
             var settings = settingsStore.Load();
             var database = Path.Combine(directory, "activity.db");
-            if (!DatabaseUpgradeService.EnsureReady(database, plan => MessageBox.Show(
-                "1.2.1, oyunların ön planda kalma süresini ayrı tutmak için veritabanını güncelleyecek.\n" +
+            if (!BrowserDatabaseUpgradeService.EnsureReady(database, plan => MessageBox.Show(
+                "2.0.0-prototype, ayrı izinli tarayıcı kayıtları için veritabanını güncelleyecek. Yeni izinler ve otomatik başlatma kapalı başlar.\n" +
                 "Önce SQLite yedeği oluşturulup bütünlüğü doğrulanacak; geçmiş ve katalog korunacak.\n" +
-                "Güvenilir ön plan oyunlarında XInput etkileşimi de doğrulanabilir; tuşlar saklanmaz.\n" +
                 $"Yedek: {plan.BackupPath}\n\n" +
-                "Eski 1.2 sürümüne dönüş için bu yedek gerekir. Yedekler geçmiş silme düğmesiyle silinmez.\n" +
+                "Eski 1.2.1 sürümüne dönüş için bu yedek gerekir. Yedekler geçmiş silme düğmesiyle silinmez.\n" +
                 "Yedeklemeye ve güncellemeye izin veriyor musunuz? Hayır seçilirse uygulama kapanır.",
                 "Family Activity Monitor — Veritabanı güncelleme onayı", MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) == DialogResult.Yes)) return;
@@ -41,7 +43,7 @@ internal static class Program
             var catalog = new SqliteGameCatalogRepository(database, optimized: true);
             var clock = new SystemClock();
             var policy = new GameModePolicy(clock) { Enabled = settings.AutomaticGameMode };
-            using var store = new BufferedActivityStore(persistent, clock, new SqliteGameForegroundStore(database, optimized: true), () => policy.MayRunMaintenance);
+            using var store = new BufferedActivityStore(persistent, clock, new SqliteGameForegroundStore(database, optimized: true), () => policy.MayRunMaintenance,browserStore:new SqliteBrowserActivityStore(database));
             var files = new CachingGameFileSystem(new GameFileSystem(), clock);
             var packages = new WindowsPackageInventory();
             // All location queries are lazy and are reached only after separate discovery consent.
@@ -61,6 +63,8 @@ internal static class Program
             var tracker = new ActivityTracker(clock, source, store, settings.DeviceId, sessionId,
                 new TrackerOptions { IdleThreshold = TimeSpan.FromSeconds(settings.IdleThresholdSeconds) }, store);
             if (settings.ConsentGranted) tracker.GrantConsent();
+            using var browserRuntime=new BrowserRuntime(tracker,clock,store);
+            using var browserPipe=new BrowserPipeServer(browserRuntime,AppContext.BaseDirectory);
             using (discovery)
             using (var form = new MainForm(tracker, store, settingsStore, settings, gameDiscovery: discovery, gameRepository: catalog))
             {
@@ -69,6 +73,9 @@ internal static class Program
                     .Concat(WindowsGameLocations.EpicManifestRoots()).Concat(WindowsGameLocations.JavaRoots().Select(p => Path.Combine(p, "versions")))
                     .Concat(settingsStore.Load().GameFolders), discovery.NotifyLibraryChange);
                 form.ConfigurePerformance(policy, monitor);
+                form.ConfigureBrowsers(browserRuntime,store);
+                form.ConfigureStartup(new AutoStartService(new WindowsStartupRegistration(),Environment.ProcessPath??""),
+                    new ParentalPinService(new LocalPinStateStore(directory),clock),args.Length==1&&args[0]=="--autostart");
                 Application.Run(form);
                 // Background reads finish without waiting for their UI continuation; then Dispose flushes the writer.
                 form.PendingDatabaseRead?.GetAwaiter().GetResult();

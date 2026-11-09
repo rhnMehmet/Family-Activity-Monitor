@@ -13,6 +13,9 @@ public sealed record LocalSettings
     public int GameDiscoveryPrivacyVersion { get; init; }
     public string[] GameFolders { get; init; } = [];
     public bool AutomaticGameMode { get; init; } = true;
+    public FamilyMonitor.Core.Browsers.BrowserOptions Browsers { get; init; } = new();
+    public bool AutoStartEnabled { get; init; }
+    public bool AutoTrackOnLogin { get; init; }
 }
 
 public sealed class LocalSettingsStore(string directory)
@@ -33,6 +36,7 @@ public sealed class LocalSettingsStore(string directory)
             settings = settings with { GameFolders = (settings.GameFolders ?? []).Where(p => !string.IsNullOrWhiteSpace(p) && Path.IsPathFullyQualified(p) && !p.StartsWith(@"\\", StringComparison.Ordinal))
                 .Where(p => !string.Equals(Path.GetPathRoot(p), Path.TrimEndingDirectorySeparator(p), StringComparison.OrdinalIgnoreCase))
                 .Take(64).ToArray() };
+            settings = settings with { Browsers=(settings.Browsers??new()).Normalize(),AutoTrackOnLogin=settings.AutoStartEnabled&&settings.ConsentGranted&&settings.PrivacyVersion==CurrentPrivacyVersion&&settings.AutoTrackOnLogin };
             if (settings.GameDiscoveryPrivacyVersion != CurrentGameDiscoveryPrivacyVersion) settings = settings with { GameDiscoveryConsentGranted = false };
             return settings.PrivacyVersion == CurrentPrivacyVersion ? settings : settings with { ConsentGranted = false, GameDiscoveryConsentGranted = false };
         }

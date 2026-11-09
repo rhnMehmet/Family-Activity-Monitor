@@ -1,0 +1,6 @@
+body { width: 350px; padding: 14px; margin: 0; font: 14px "Segoe UI", sans-serif; background: #f5f7fa; color: #202631; }
+h1 { font-size: 20px; margin-top: 0; }
+label { display: block; padding: 8px 0; }
+p { line-height: 1.45; }
+button { padding: 8px; margin: 3px 0; width: 100%; }
+#status { font-weight: 600; }

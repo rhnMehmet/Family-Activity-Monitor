@@ -2,6 +2,8 @@ using FamilyMonitor.Core;
 using Microsoft.Data.Sqlite;
 using FamilyMonitor.Core.Games;
 using FamilyMonitor.Infrastructure.Games;
+using FamilyMonitor.Core.Browsers;
+using FamilyMonitor.Infrastructure.Browsers;
 
 namespace FamilyMonitor.Infrastructure;
 
@@ -11,6 +13,7 @@ public sealed class SqliteActivityStore : IActivityStore
     private readonly string databasePath;
     private readonly bool optimized;
     public bool MaintenancePending { get; private set; }
+    internal void RequestMaintenance()=>MaintenancePending=true;
 
     public SqliteActivityStore(string databasePath, bool optimized = false)
     {
@@ -35,6 +38,9 @@ public sealed class SqliteActivityStore : IActivityStore
             command.CommandText="UPDATE game_foreground_periods SET status='Interrupted' WHERE status='Active';";
             command.ExecuteNonQuery();
         }
+        command.CommandText="SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='browser_visits';";
+        if((long)command.ExecuteScalar()!>0)
+        {command.CommandText="UPDATE browser_visits SET status='Interrupted' WHERE status='Active';";command.ExecuteNonQuery();}
     }
 
     private SqliteConnection Open()
@@ -54,12 +60,14 @@ public sealed class SqliteActivityStore : IActivityStore
 
     public void Save(ActivityRecord record) => SaveBatch([record],[]);
 
-    public void SaveBatch(IReadOnlyList<ActivityRecord> records, IReadOnlyList<GameForegroundPeriod> presence)
+    public void SaveBatch(IReadOnlyList<ActivityRecord> records, IReadOnlyList<GameForegroundPeriod> presence, IReadOnlyList<BrowserVisit>? browserVisits=null)
     {
-        if(records.Count==0 && presence.Count==0)return;
+        browserVisits??=[];
+        if(records.Count==0 && presence.Count==0 && browserVisits.Count==0)return;
         using var connection=Open();using var transaction=connection.BeginTransaction();
         foreach(var record in records)SaveRecord(connection,transaction,record);
         foreach(var period in presence)SqliteGameForegroundStore.SaveRecord(connection,transaction,period);
+        foreach(var visit in browserVisits)SqliteBrowserActivityStore.SaveRecord(connection,transaction,visit);
         transaction.Commit();
     }
 
